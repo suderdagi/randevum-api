@@ -8,7 +8,7 @@ describe('auth', () => {
   it('registers a user without returning the password hash', async () => {
     const res = await api()
       .post('/api/v1/auth/register')
-      .send({ email: 'Sude@Example.com', password: 'password123', fullName: 'Sude Erdağı' })
+      .send({ email: ' Sude@Example.com ', password: 'password123', fullName: 'Sude Erdağı' })
       .expect(201);
 
     expect(res.body.user).toMatchObject({ email: 'sude@example.com', role: 'customer' });
