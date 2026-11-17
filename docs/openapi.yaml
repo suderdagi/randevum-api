@@ -1,0 +1,420 @@
+openapi: 3.0.3
+info:
+  title: Randevum API
+  version: 1.0.0
+  description: |
+    Appointment booking API for small businesses such as barbers, beauty salons and clinics.
+
+    Authenticate with `POST /auth/login`, then send the access token as `Authorization: Bearer <token>`.
+    Access tokens live 15 minutes; use `POST /auth/refresh` with the refresh token to get a new pair.
+servers:
+  - url: /api/v1
+
+tags:
+  - name: Auth
+  - name: Businesses
+  - name: Services
+  - name: Appointments
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string, example: SLOT_TAKEN }
+            message: { type: string, example: This time slot is no longer available }
+            details: {}
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        email: { type: string, format: email }
+        fullName: { type: string }
+        phone: { type: string, nullable: true }
+        role: { type: string, enum: [customer, owner] }
+        createdAt: { type: string, format: date-time }
+    AuthResponse:
+      type: object
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+        accessToken: { type: string }
+        refreshToken: { type: string }
+    WorkingHour:
+      type: object
+      required: [weekday, opensAt, closesAt]
+      properties:
+        weekday: { type: integer, minimum: 1, maximum: 7, description: '1 = Monday, 7 = Sunday' }
+        opensAt: { type: string, example: '09:00' }
+        closesAt: { type: string, example: '18:00' }
+    Service:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string, example: Saç kesimi }
+        durationMinutes: { type: integer, example: 30 }
+        price: { type: number, example: 350 }
+    Business:
+      type: object
+      properties:
+        id: { type: integer }
+        ownerId: { type: integer }
+        name: { type: string, example: Kuaför Ayşe }
+        slug: { type: string, example: kuafor-ayse }
+        category: { type: string, enum: [barber, beauty, clinic, dentist, fitness, tattoo, other] }
+        city: { type: string, example: Elazığ }
+        address: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        description: { type: string, nullable: true }
+        timezone: { type: string, example: Europe/Istanbul }
+        cancellationHours: { type: integer, example: 2 }
+        workingHours:
+          type: array
+          items: { $ref: '#/components/schemas/WorkingHour' }
+        services:
+          type: array
+          items: { $ref: '#/components/schemas/Service' }
+    BusinessInput:
+      type: object
+      required: [name, category, city]
+      properties:
+        name: { type: string }
+        category: { type: string, enum: [barber, beauty, clinic, dentist, fitness, tattoo, other] }
+        city: { type: string }
+        address: { type: string }
+        phone: { type: string }
+        description: { type: string }
+        timezone: { type: string, default: Europe/Istanbul }
+        cancellationHours: { type: integer, default: 2 }
+        workingHours:
+          type: array
+          items: { $ref: '#/components/schemas/WorkingHour' }
+    Appointment:
+      type: object
+      properties:
+        id: { type: integer }
+        businessId: { type: integer }
+        serviceId: { type: integer }
+        customerId: { type: integer }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        status: { type: string, enum: [pending, confirmed, cancelled, completed] }
+        note: { type: string, nullable: true }
+        service: { $ref: '#/components/schemas/Service' }
+
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Create an account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, fullName]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                fullName: { type: string }
+                phone: { type: string }
+                role: { type: string, enum: [customer, owner], default: customer }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Exchange a refresh token for a new token pair
+      description: Each refresh token works once. Reusing an old token revokes all sessions of the user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { description: New access and refresh token }
+        '401': { $ref: '#/components/responses/Error' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke a refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '204': { description: Logged out }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+
+  /businesses:
+    get:
+      tags: [Businesses]
+      summary: Search businesses
+      parameters:
+        - { name: city, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string }, description: Search in name and description }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        '200': { description: Paginated list of businesses }
+    post:
+      tags: [Businesses]
+      summary: Create a business (owner)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Business' }
+        '403': { $ref: '#/components/responses/Error' }
+
+  /businesses/mine:
+    get:
+      tags: [Businesses]
+      summary: Businesses owned by the current user
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: OK }
+
+  /businesses/{id}:
+    get:
+      tags: [Businesses]
+      summary: Business details with working hours and services
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Business' }
+        '404': { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Businesses]
+      summary: Update business details (owner)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessInput' }
+      responses:
+        '200': { description: Updated }
+
+  /businesses/{id}/working-hours:
+    put:
+      tags: [Businesses]
+      summary: Replace the weekly working hours (owner)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: '#/components/schemas/WorkingHour' }
+      responses:
+        '200': { description: Updated }
+
+  /businesses/{id}/availability:
+    get:
+      tags: [Appointments]
+      summary: Free time slots for a service on a day
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { name: serviceId, in: query, required: true, schema: { type: integer } }
+        - { name: date, in: query, required: true, schema: { type: string, example: '2026-12-01' } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              example:
+                date: '2026-12-01'
+                timezone: Europe/Istanbul
+                durationMinutes: 30
+                slots: ['2026-12-01T09:00:00.000+03:00', '2026-12-01T09:15:00.000+03:00']
+
+  /businesses/{id}/services:
+    post:
+      tags: [Services]
+      summary: Add a service (owner)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, durationMinutes, price]
+              properties:
+                name: { type: string }
+                durationMinutes: { type: integer, multipleOf: 5 }
+                price: { type: number }
+      responses:
+        '201': { description: Created }
+
+  /businesses/{id}/appointments:
+    get:
+      tags: [Appointments]
+      summary: Appointments of a business (owner)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Id' }
+        - { name: date, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+
+  /services/{id}:
+    patch:
+      tags: [Services]
+      summary: Update a service (owner)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [Services]
+      summary: Deactivate a service (owner)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '204': { description: Deactivated }
+
+  /appointments:
+    post:
+      tags: [Appointments]
+      summary: Book an appointment (customer)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [serviceId, startsAt]
+              properties:
+                serviceId: { type: integer }
+                startsAt: { type: string, format: date-time, example: '2026-12-01T10:30:00+03:00' }
+                note: { type: string }
+      responses:
+        '201':
+          description: Booked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Appointment' }
+        '400': { $ref: '#/components/responses/Error' }
+        '409':
+          description: The slot was taken by someone else
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /appointments/me:
+    get:
+      tags: [Appointments]
+      summary: My appointments
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: upcoming, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: OK }
+
+  /appointments/{id}/status:
+    patch:
+      tags: [Appointments]
+      summary: Confirm, complete or cancel an appointment
+      description: |
+        Owner: pending → confirmed / cancelled, confirmed → completed / cancelled.
+        Customer: pending or confirmed → cancelled, until the business's cancellation deadline.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [confirmed, cancelled, completed] }
+      responses:
+        '200': { description: Updated }
+        '409': { $ref: '#/components/responses/Error' }
