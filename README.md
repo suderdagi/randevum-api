@@ -137,7 +137,7 @@ PostgreSQL rejects any active appointment that overlaps another one of the same 
 npm test
 ```
 
-34 tests: unit tests for slot calculation, status transitions and slugs, plus integration tests that run the real Express app against PostgreSQL with Supertest (auth, permissions, booking, concurrency, cancellation rules). Tests use a separate database (`TEST_DATABASE_URL`, default `randevum_test`) that is reset before each run.
+35 tests: unit tests for slot calculation, status transitions and slugs, a logging test (access tokens never appear in request logs), plus integration tests that run the real Express app against PostgreSQL with Supertest (auth, permissions, booking, concurrency, cancellation rules). Tests use a separate database (`TEST_DATABASE_URL`, default `randevum_test`) that is reset before each run.
 
 CI runs lint, type check, tests and build on every push.
 
